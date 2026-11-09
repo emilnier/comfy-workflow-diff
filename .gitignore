@@ -1,0 +1,19 @@
+# Local dependencies and machine settings
+node_modules/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Original local fixtures/screenshots contain personal workflow content.
+/tests/fixtures/
+/tests/screens/
+/tests/jsdom-test.mjs
+/tests/browser-test.mjs
+/tests/package.json
+/tests/pnpm-lock.yaml
+/docs/screenshot.png
