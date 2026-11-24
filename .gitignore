@@ -9,11 +9,9 @@ Thumbs.db
 .vscode/
 .idea/
 
-# Original local fixtures/screenshots contain personal workflow content.
-/tests/fixtures/
-/tests/screens/
-/tests/jsdom-test.mjs
-/tests/browser-test.mjs
-/tests/package.json
-/tests/pnpm-lock.yaml
+# Local build output, validation files and private workflow samples
+/work/
+/outputs/
+/tests/*
+!/tests/core.test.cjs
 /docs/screenshot.png

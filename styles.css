@@ -426,6 +426,9 @@ kbd {
   transition: border-color .15s, background .15s;
 }
 .node-block:hover { border-color: #2c3c4f; }
+.browse-node { display: grid; gap: 4px; width: 100%; padding: 9px 10px; text-align: left; color: var(--text); cursor: pointer; overflow-wrap: anywhere; }
+.browse-node small { color: var(--muted); }
+.source-value { white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.5 var(--mono); }
 .node-block.action-copy { border-color: rgba(240,169,59,.18); }
 .node-block.action-bypass { border-color: rgba(181,140,255,.22); }
 .node-block.action-enable,

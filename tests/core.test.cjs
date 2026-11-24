@@ -38,6 +38,20 @@ test('position, color and collapsed flags are ignored', async () => {
   assert.equal(core.compareParsed(await parse(a), await parse(b)).identical, true);
 });
 
+test('single-source inspection preserves graph bounds, links and subgraph parameter values', async () => {
+  const data = workflow([node(1, { scale: 2 }, 0, 'example-subgraph'), node(2)]);
+  data.groups = [{ title: 'Example', bounding: [-100, -200, 2000, 700] }];
+  data.links = [[1, 1, 0, 2, 0, 'IMAGE']];
+  data.definitions = { subgraphs: [{ id: 'example-subgraph', nodes: [node(3, { steps: 18 })] }] };
+  const source = await parse(data);
+  const graph = core.buildInspectionGraph(source);
+  assert.deepEqual(graph.bounds, { minX: -100, minY: -200, maxX: 1900, maxY: 500 });
+  assert.equal(graph.links.length, 1);
+  assert.deepEqual(graph.nodes[0].params.map(p => p.value), [2, 18]);
+  assert.deepEqual(source.nodes[0].params.map(p => p.value), [2]);
+  assert.equal(core.compareParsed(source, source).identical, true);
+});
+
 test('API comparison detects a changed output slot on the same source', async () => {
   const a = { 1: { class_type: 'Source', inputs: {} }, 2: { class_type: 'Target', inputs: { image: ['1', 0] } } };
   const b = structuredClone(a);

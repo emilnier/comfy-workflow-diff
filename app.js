@@ -26,6 +26,7 @@
     selectedParamKey: null,
     inspector: null,
     graph: {
+      data: null,
       scale: 1,
       tx: 0,
       ty: 0,
@@ -378,7 +379,7 @@
       state.loading[key] = false;
       state.errors[key] = '';
       resetComparisonState();
-      afterSourcesChanged(true);
+      computeDiff();
       const warning = parsed.warnings && parsed.warnings[0];
       if (warning) showToast(warning, false, 5200);
     } catch (err) {
@@ -388,13 +389,17 @@
       state.file[key] = null;
       state.errors[key] = String(err.message || err);
       resetComparisonState();
-      afterSourcesChanged(false);
+      computeDiff();
       showToast('读取失败：' + String(err.message || err), true, 8000);
     }
   }
 
   function resetComparisonState() {
+    cancelAnimationFrame(state.graph.animation);
     state.diff = null;
+    state.graph.data = null;
+    state.query = '';
+    els.searchInput.value = '';
     state.selectedNodeKey = null;
     state.selectedGraphId = null;
     state.selectedParamKey = null;
@@ -414,29 +419,21 @@
     els.inspector.hidden = true;
   }
 
-  function afterSourcesChanged(fitGraphAfter) {
-    if (state.a && state.b) {
-      computeDiff({ fit: fitGraphAfter !== false });
-    } else {
-      state.diff = null;
-      renderAll();
-      clearGraph();
-      updateGraphEmptyCopy();
-    }
-  }
-
   function computeDiff(opts) {
     opts = opts || {};
     if (!state.a || !state.b) {
       state.diff = null;
+      const source = state.a || state.b;
+      state.graph.data = source && core.buildInspectionGraph(source);
+      state.graph.onlyChanges = false;
       renderAll();
-      clearGraph();
-      updateGraphEmptyCopy();
+      renderGraph('fit');
       return;
     }
     try {
       const previousSelection = state.selectedNodeKey;
       state.diff = core.compareParsed(state.a, state.b, { compareLinks: false });
+      state.graph.data = state.diff.graph;
       if (!['all', 'copy', 'bypass', 'enable', 'mode', 'add', 'remove'].includes(state.filter)) state.filter = 'all';
       else if (state.filter !== 'all' && !(state.diff.stats.actionCounts?.[state.filter] > 0)) state.filter = 'all';
       if (previousSelection && !state.diff.nodeResults.some(nr => nr.key === previousSelection)) {
@@ -449,6 +446,7 @@
       renderGraph(opts.fit !== false ? 'fit' : 'preserve');
     } catch (err) {
       state.diff = null;
+      state.graph.data = null;
       renderAll();
       clearGraph();
       showToast('比较失败：' + (err.message || err), true, 8000);
@@ -462,7 +460,7 @@
     state.loading[key] = false;
     state.errors[key] = '';
     resetComparisonState();
-    afterSourcesChanged(false);
+    computeDiff();
     if (key === 'a') els.fileA.value = '';
     else els.fileB.value = '';
   }
@@ -683,7 +681,9 @@
 
   function renderDiffTools() {
     const diff = state.diff;
-    els.diffTools.hidden = !diff;
+    els.diffTools.hidden = !state.graph.data;
+    $('.filter-tabs', els.diffTools).hidden = !diff;
+    els.searchInput.placeholder = diff ? '搜索节点、参数或 B 目标值…' : '搜索节点、参数或参数值…';
     if (!diff) return;
     const counts = diff.stats.actionCounts || {};
     els.countAll.textContent = diff.stats.changedNodes;
@@ -744,13 +744,10 @@
     const list = els.diffList;
     clear(list);
     if (!diff) {
-      if (state.a || state.b) {
-        renderOnboarding('还差一份来源', '已经载入 ' + (state.a ? 'A 当前' : 'B 目标') + '，再拖入另一份即可生成 A→B 操作清单。', [
-          'A 与 B 可以都是 JSON，也可以都是图片，或一边 JSON 一边图片。',
-          '图片建议使用 ComfyUI 直接输出的原图。'
-        ]);
+      if (state.graph.data) {
+        renderNodeDirectory(list);
       } else {
-        renderOnboarding('从 A 和 B 开始', '把当前工作流拖到 A，把目标工作流拖到 B。', [
+        renderOnboarding('导入工作流', '拖入一份文件即可浏览节点参数。要比较两份文件，请将当前工作流放在 A，目标工作流放在 B。', [
           'A 是当前状态，B 是你要改成的目标状态。',
           '工具会直接告诉你：复制 B 的哪些值、哪些节点要 Bypass 或启用。',
           '默认只看变更、不显示连线；点击任意节点即可左右联动定位。'
@@ -802,6 +799,26 @@
       groupWrap = renderNodeBlock(nr, entry.items);
       list.appendChild(groupWrap);
     }
+    applySelectionClasses();
+  }
+
+  function renderNodeDirectory(list) {
+    const query = state.query.trim().toLowerCase();
+    for (const node of state.graph.data.nodes) {
+      const fields = [node.label, node.type, node.id, node.group?.title];
+      if (query && !fields.some(v => String(v ?? '').toLowerCase().includes(query)) &&
+          !node.params.some(p => [p.key, p.label, p.localized, valueFull(p.value)]
+            .some(v => String(v ?? '').toLowerCase().includes(query)))) continue;
+      const button = make('button', 'node-block browse-node');
+      button.type = 'button';
+      button.dataset.nodeKey = node.id;
+      button.append(make('strong', '', node.label), make('small', '', [
+        '#' + node.id, node.group?.title, node.params.length + ' 项参数'
+      ].filter(Boolean).join(' · ')));
+      button.addEventListener('click', () => selectGraphNode(node.id));
+      list.appendChild(button);
+    }
+    if (!list.childElementCount) list.appendChild(make('div', 'no-changes', '没有符合条件的节点'));
     applySelectionClasses();
   }
 
@@ -1020,8 +1037,7 @@
 
   function selectGraphNode(id) {
     if (Date.now() < state.graph.suppressClickUntil) return;
-    if (!state.diff) return;
-    const gn = state.diff.graph.nodes.find(n => n.id === id);
+    const gn = state.graph.data?.nodes.find(n => n.id === id);
     if (!gn) return;
     if (gn.diff) {
       // A graph click should open the detail panel and land on the first
@@ -1031,7 +1047,7 @@
       else selectNodeByKey(gn.diff.key, { focusGraph: true, scrollList: true, tab: 'changed' });
       return;
     }
-    state.selectedNodeKey = null;
+    state.selectedNodeKey = state.diff ? null : String(id);
     state.selectedParamKey = null;
     state.selectedGraphId = id;
     state.inspector = {
@@ -1041,9 +1057,15 @@
       paramKey: null,
       graphOnly: true
     };
+    if (!state.diff && state.query && !els.diffList.querySelector('[data-node-key="' + cssEscape(id) + '"]')) {
+      els.searchInput.value = '';
+      state.query = '';
+      renderDiffList();
+    }
     renderInspector();
     applySelectionClasses();
     focusGraphNode(id);
+    if (!state.diff) scrollNodeIntoView(String(id));
   }
 
   function cssEscape(s) {
@@ -1166,14 +1188,38 @@
 
     const body = els.inspectorBody;
     clear(body);
-    if (ins.tab === 'all' || ins.graphOnly) {
+    const single = !state.diff;
+    if (single) {
+      renderSourceParams(body, node);
+    } else if (ins.tab === 'all' || ins.graphOnly) {
       renderAllParams(body, nr, node);
     } else {
       renderChangedItems(body, nr, node);
     }
     els.copyNodeId.disabled = false;
-    els.copyNodeParams.disabled = !nr || !nr.copyCount;
+    els.copyNodeParams.lastChild.textContent = single ? '复制全部参数' : '复制全部 B 值';
+    els.copyNodeParams.disabled = single ? !node.params.length : !nr?.copyCount;
+    els.copySummary.hidden = single;
     els.copySummary.disabled = !nr;
+  }
+
+  function renderSourceParams(body, node) {
+    if (!node.params.length) {
+      body.appendChild(make('div', 'no-changes', '这个节点没有保存控件参数。'));
+      return;
+    }
+    for (const param of node.params) {
+      const item = make('div', 'inspector-item');
+      const head = make('div', 'inspector-item-head');
+      head.appendChild(make('strong', 'param-label', param.label || param.key));
+      if (param.label && param.label !== param.key) head.appendChild(make('span', 'param-code', param.key));
+      const copy = copyIconButton('param-copy', '复制参数值');
+      const text = valueFull(param.value);
+      copy.addEventListener('click', () => copyText(text, '参数值'));
+      head.appendChild(copy);
+      item.append(head, make('div', 'source-value', text));
+      body.appendChild(item);
+    }
   }
 
   function renderChangedItems(body, nr, node) {
@@ -1455,6 +1501,8 @@
     els.changePins.classList.remove('visible');
     els.groupActions.classList.remove('visible');
     els.graphLegend.hidden = true;
+    els.btnLinks.disabled = true;
+    els.btnOnlyChanges.disabled = true;
     els.btnFit.disabled = true;
     els.btnZoomIn.disabled = true;
     els.btnZoomOut.disabled = true;
@@ -1465,32 +1513,13 @@
   }
 
   function updateGraphEmptyCopy() {
-    if (state.diff) {
-      els.graphEmpty.hidden = true;
-      return;
-    }
-    els.graphEmpty.hidden = false;
-    const h2 = $('h2', els.graphEmpty);
-    const ps = $$('p', els.graphEmpty);
-    if (!state.a && !state.b) {
-      h2.textContent = '两图一放，改动一目了然';
-      ps[0].innerHTML = '左侧拖入两份 <strong>.json</strong> 工作流，或两张带 ComfyUI 元数据的成品图。';
-      ps[1].hidden = false;
-      ps[1].textContent = '支持 PNG 内嵌 workflow / prompt，JPEG/WebP EXIF，以及 A1111 参数摘要。';
-    } else if (state.a || state.b) {
-      h2.textContent = '还差一份来源';
-      ps[0].textContent = '已经载入 ' + (state.a ? 'A 当前' : 'B 目标') + '，再拖入另一份即可生成 A→B 操作清单。';
-      ps[1].hidden = true;
-    } else {
-      h2.textContent = '暂时没有可显示的图';
-      ps[0].textContent = '载入两份工作流后，这里会显示它们的大致节点图。';
-      ps[1].hidden = true;
-    }
+    els.graphEmpty.hidden = !!state.graph.data;
   }
 
   function renderGraph(mode) {
     const diff = state.diff;
-    if (!diff) {
+    const g = state.graph.data;
+    if (!g) {
       clearGraph();
       return;
     }
@@ -1510,14 +1539,16 @@
     clear(els.changePins);
     clear(els.groupActions);
     els.graphEmpty.hidden = true;
-    els.graphLegend.hidden = false;
+    els.graphLegend.hidden = !diff;
+    els.btnLinks.disabled = false;
+    els.btnOnlyChanges.disabled = !diff || diff.identical;
     els.btnFit.disabled = false;
     els.btnZoomIn.disabled = false;
     els.btnZoomOut.disabled = false;
-    els.btnFocusChanges.disabled = !diff.graph.nodes.some(n => n.graphStatus !== 'unchanged');
-    els.graphMeta.textContent = diff.stats.changedNodes + ' 个节点待处理 · ' + diff.stats.copyParams + ' 个 B 值 · 点击节点查看操作';
-
-    const g = diff.graph;
+    els.btnFocusChanges.disabled = !diff || diff.identical;
+    els.graphMeta.textContent = diff
+      ? diff.stats.changedNodes + ' 个节点待处理 · ' + diff.stats.copyParams + ' 个 B 值 · 点击节点查看操作'
+      : g.nodes.length + ' 个节点 · 点击节点查看参数';
     const bounds = g.bounds;
     const pad = 80;
     const bg = makeSvg('rect', {
@@ -1532,7 +1563,7 @@
     viewport.appendChild(bg);
 
     // Groups.
-    const changedGroupTitles = new Set(diff.nodeResults.map(nr => nr.groupTitle));
+    const changedGroupTitles = new Set(diff?.nodeResults.map(nr => nr.groupTitle));
     for (const group of g.groups) {
       if (!(group.w > 2 && group.h > 2)) continue;
       const groupG = makeSvg('g', {
@@ -1817,9 +1848,9 @@
         n.subtitle || n.displayType || n.type,
         '组：' + (n.group?.title || '未分组'),
         '状态：' + core.modeLabel(n.mode),
-        n.graphStatus === 'unchanged' ? '无差异' : (nr ? nr.actionLabel : '有差异'),
-        '点击查看 B 目标值和操作详情'
-      ].join('\n');
+        diff && (nr ? nr.actionLabel : '无差异'),
+        diff ? '点击查看 B 目标值和操作详情' : '点击查看参数'
+      ].filter(Boolean).join('\n');
       nodeG.appendChild(titleEl);
 
       nodeG.addEventListener('click', e => {
@@ -2095,9 +2126,9 @@
   }
 
   function fitGraph(padding) {
-    if (!state.diff || !state.graph.built) return;
+    if (!state.graph.built) return;
     state.graph.autoFit = true;
-    let bounds = state.diff.graph.bounds;
+    let bounds = state.graph.data.bounds;
     if (state.graph.onlyChanges) {
       const changed = state.diff.graph.nodes.filter(n => n.graphStatus !== 'unchanged');
       const cb = nodeBounds(changed);
@@ -2125,8 +2156,8 @@
   }
 
   function focusGraphNode(id) {
-    if (!state.diff || !state.graph.built) return;
-    const n = state.diff.graph.nodes.find(x => x.id === id);
+    if (!state.graph.built) return;
+    const n = state.graph.data.nodes.find(x => x.id === id);
     if (!n) return;
     state.graph.autoFit = false;
     const vw = els.graphWrap.clientWidth;
@@ -2161,7 +2192,7 @@
   }
 
   function zoomAt(clientX, clientY, factor) {
-    if (!state.diff || !state.graph.built) return;
+    if (!state.graph.built) return;
     cancelAnimationFrame(state.graph.animation);
     const rect = els.graphWrap.getBoundingClientRect();
     const sx = clientX - rect.left;
@@ -2200,7 +2231,7 @@
 
   function bindGraphInteraction() {
     els.graphWrap.addEventListener('wheel', e => {
-      if (!state.diff || !state.graph.built) return;
+      if (!state.graph.built) return;
       if (e.target.closest('.inspector') || e.target.closest('.toast')) return;
       e.preventDefault();
       const factor = Math.exp(-e.deltaY * 0.0014);
@@ -2209,7 +2240,7 @@
 
     let pan = null;
     els.graphWrap.addEventListener('pointerdown', e => {
-      if (!state.diff || !state.graph.built) return;
+      if (!state.graph.built) return;
       if (e.button !== 0) return;
       if (e.target.closest('.inspector') || e.target.closest('.graph-actions') || e.target.closest('.toast')) return;
       pan = {
@@ -2338,6 +2369,11 @@
       copyText(String(state.inspector.node.id), '节点 ID');
     });
     els.copyNodeParams.addEventListener('click', () => {
+      if (!state.diff && state.inspector) {
+        const lines = state.inspector.node.params.map(p => (p.label || p.key) + ': ' + valueFull(p.value));
+        copyText(lines.join('\n'), '全部参数');
+        return;
+      }
       if (!state.inspector || !state.inspector.nodeResult) {
         showToast('这个节点没有 A→B 变更');
         return;
@@ -2441,14 +2477,14 @@
     window.addEventListener('resize', () => {
       clearTimeout(timer);
       timer = setTimeout(() => {
-        if (!state.diff || !state.graph.built) return;
+        if (!state.graph.built) return;
         if (state.graph.autoFit) fitGraph();
         else applyGraphTransform();
       }, 120);
     });
     if (window.ResizeObserver) {
       const ro = new ResizeObserver(debounce(() => {
-        if (!state.diff || !state.graph.built) return;
+        if (!state.graph.built) return;
         if (state.graph.autoFit) fitGraph();
         else if (!state.graph.animation) applyGraphTransform();
       }, 100));

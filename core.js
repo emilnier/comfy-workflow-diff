@@ -12,7 +12,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
-  const VERSION = '1.3.0';
+  const VERSION = '1.4.0';
   const MAX_SAFE = Number.MAX_SAFE_INTEGER;
 
   /* ------------------------------------------------------------------ *
@@ -1927,6 +1927,12 @@
     });
   }
 
+  function normaliseSubgraph(def, definitions) {
+    return normaliseWorkflow({
+      nodes: def.nodes || [], groups: def.groups || [], links: def.links || [], definitions
+    }, null, {});
+  }
+
   function collectSubgraphItems(left, right, pair) {
     if (!left.subgraphDefs || !right.subgraphDefs) return [];
     const defA = left.subgraphDefs[pair.a.type];
@@ -1937,18 +1943,8 @@
     let subA, subB;
     try {
       const definitions = left.workflow?.definitions || right.workflow?.definitions;
-      subA = normaliseWorkflow({
-        nodes: defA.nodes || [],
-        groups: defA.groups || [],
-        links: defA.links || [],
-        definitions
-      }, null, { filename: 'subgraph-a' });
-      subB = normaliseWorkflow({
-        nodes: defB.nodes || [],
-        groups: defB.groups || [],
-        links: defB.links || [],
-        definitions
-      }, null, { filename: 'subgraph-b' });
+      subA = normaliseSubgraph(defA, definitions);
+      subB = normaliseSubgraph(defB, definitions);
     } catch (err) {
       return [{
         kind: 'param',
@@ -2147,6 +2143,34 @@
       nodeById: new Map(nodes.map(n => [n.id, n])),
       groups: (parsed.groups || []).map(g => Object.assign({}, g, { title }))
     });
+  }
+
+  function buildGraph(nodes, groups, links) {
+    const bounds = calcBounds(nodes);
+    for (const g of groups) {
+      if (!(g.w > 2 && g.h > 2)) continue;
+      bounds.minX = Math.min(bounds.minX, g.x);
+      bounds.minY = Math.min(bounds.minY, g.y);
+      bounds.maxX = Math.max(bounds.maxX, g.x + g.w);
+      bounds.maxY = Math.max(bounds.maxY, g.y + g.h);
+    }
+    return { nodes, groups, links, bounds, hasLayout: true };
+  }
+
+  function buildInspectionGraph(source) {
+    const nodes = source.nodes.map(node => {
+      const def = source.subgraphDefs?.[node.type];
+      if (!Array.isArray(def?.nodes)) return node;
+      const sub = normaliseSubgraph(def, source.workflow.definitions);
+      const params = node.params.slice();
+      for (const child of sub.nodes) {
+        for (const p of child.params) {
+          params.push({ ...p, key: child.id + '/' + p.key, label: child.label + ' #' + child.id + ' · ' + p.label });
+        }
+      }
+      return { ...node, params };
+    });
+    return buildGraph(nodes, source.groups, source.links);
   }
 
   function compareParsed(a, b, options) {
@@ -2371,21 +2395,7 @@
       }
     }
     graphGroups.sort((u, v) => (u.y - v.y) || (u.x - v.x));
-    const bounds = calcBounds(graphNodes);
-    for (const g of graphGroups) {
-      if (!(g.w > 2 && g.h > 2)) continue;
-      bounds.minX = Math.min(bounds.minX, g.x);
-      bounds.minY = Math.min(bounds.minY, g.y);
-      bounds.maxX = Math.max(bounds.maxX, g.x + g.w);
-      bounds.maxY = Math.max(bounds.maxY, g.y + g.h);
-    }
-    const graph = {
-      nodes: graphNodes,
-      groups: graphGroups,
-      links: right.links || [],
-      bounds,
-      hasLayout: true
-    };
+    const graph = buildGraph(graphNodes, graphGroups, right.links || []);
 
     return {
       version: VERSION,
@@ -2499,6 +2509,7 @@
     parseFile,
     parseImageMetadata,
     buildParsed,
+    buildInspectionGraph,
     compareParsed,
     summarizeParsed,
     extractSummaryFromParsed,

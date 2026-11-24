@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
   <title>ComfyUI 工作流对比器</title>
-  <link rel="stylesheet" href="styles.css?v=1.3">
+  <link rel="stylesheet" href="styles.css?v=1.4">
 </head>
 <body>
   <svg class="icon-sprite" aria-hidden="true">
@@ -74,7 +74,7 @@
         </div>
         <div class="brand-text">
           <h1>ComfyUI 工作流对比器</h1>
-          <p>拖入 A 当前与 B 目标，直接生成复制 / Bypass / 启用操作清单</p>
+          <p>拖入一份工作流查看参数，拖入第二份比较改动</p>
         </div>
       </div>
       <div class="top-actions">
@@ -169,7 +169,7 @@
           <div class="diff-list" id="diffList"></div>
         </section>
         <footer class="sidebar-foot">
-          <span>A→B 操作清单 · 本地计算</span>
+          <span>文件在本机解析</span>
           <span class="kbd-hint"><kbd>Esc</kbd> 关闭详情</span>
         </footer>
       </aside>
@@ -259,8 +259,8 @@
               <span class="ghost-node n3"></span>
               <span class="ghost-diff">≠</span>
             </div>
-            <h2>两图一放，改动一目了然</h2>
-            <p>左侧拖入两份 <strong>.json</strong> 工作流，或两张带 ComfyUI 元数据的成品图。</p>
+            <h2>查看工作流参数</h2>
+            <p>拖入一份 <strong>.json</strong> 工作流或带元数据的原图即可浏览节点。添加第二份文件可对比改动。</p>
             <p class="empty-tip">支持 PNG 内嵌 <code>workflow</code> / <code>prompt</code>，JPEG/WebP EXIF，以及 A1111 参数摘要。</p>
           </div>
 
@@ -313,6 +313,7 @@
       </div>
       <div class="modal-body">
         <ol class="help-steps">
+          <li><strong>查看一份工作流</strong>：将文件放到任一侧，在左侧列表或图中点击节点即可查看并复制参数。搜索框支持节点名、参数名和参数值。</li>
           <li><strong>拖入 A 当前和 B 目标</strong>：A 是你现在的工作流，B 是你希望改成的目标工作流。既可以是 ComfyUI 导出的 <code>.json</code>，也可以是带元数据的原图。</li>
           <li><strong>直接看操作</strong>：每个差异会归为「复制 B 参数 / 改为 Bypass / 启用 / 新增 / 删除」，不再需要自己从参数表推断该做什么。</li>
           <li><strong>点哪看哪</strong>：点击左侧节点、图中节点或固定尺寸操作标签，都会打开右侧详情，并自动跳到第一条差异。</li>
@@ -358,7 +359,7 @@
     </div>
   </div>
 
-  <script src="core.js?v=1.3"></script>
-  <script src="app.js?v=1.3"></script>
+  <script src="core.js?v=1.4"></script>
+  <script src="app.js?v=1.4"></script>
 </body>
 </html>

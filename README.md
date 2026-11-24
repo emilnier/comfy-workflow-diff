@@ -1,24 +1,15 @@
-# ComfyUI 工作流对比器 · v1.3
+# ComfyUI 工作流对比器 · v1.4.0
 
-不依赖 ComfyUI 服务端、完全在本地运行的图形界面小工具。把 **A 当前工作流** 和 **B 目标工作流**（或两张带元数据的成品图）拖进来，它不只列差异，而是直接告诉你：
-
-- 要复制 B 的哪些值；
-- 要把哪个节点改为 Bypass；
-- 要启用哪个节点；
-- 哪些节点是 B 新增 / 仅 A 存在。
-
-工作流图默认**只看变更、不显示连线**；缩小时用固定屏幕尺寸的操作标签和节点名标出目标节点，不再依赖缩成一条线的虚线边框。
-
-全部解析都在浏览器本地完成，不上传任何文件。
+拖入一份工作流可以查看、搜索和复制节点参数。添加第二份文件后，工具会列出从 A 当前工作流变为 B 目标工作流所需的参数、节点与状态改动。文件在本机浏览器内解析。
 
 ## 快速开始
 
-1. 双击 `start-comfy-diff.cmd`。它会用本机 Chrome / Edge 打开一个独立应用窗口。
-2. 也可以直接双击 `index.html`，在浏览器里使用。
-3. 把当前工作流拖到左侧 **A 当前**，目标工作流拖到 **B 目标**；一次拖两个文件会自动分配。
-4. 默认只显示实际变更节点，且不显示连线。点击左侧节点、图中节点或固定尺寸操作标签，右侧会弹出操作详情，左侧列表也会自动跳到对应节点。
+1. 在 Windows 上，从 [GitHub Releases](https://github.com/emilnier/comfy-workflow-diff/releases/latest) 下载并双击 `ComfyWorkflowDiff.exe`。它使用本机 Chrome 或 Edge 打开应用窗口，也可回退到默认浏览器。使用源码时直接打开 `index.html`。
+2. 把工作流或带元数据的原图放入 A 或 B。点击左侧列表或图中的节点，可以查看完整参数值，包括长提示词。搜索框支持节点、参数名和参数值。子图实例会列出其直接内部节点的控件参数。
+3. 将第二份文件放入空位，即可对比 A 和 B。清空任意一侧会返回剩余文件的参数视图。
+4. 双文件比较默认聚焦发生改动的节点。点击节点或操作标签即可查看详情。
 
-> 推荐 Chrome / Edge。浏览器需要支持 `DecompressionStream`（用于解压 PNG 的 zTXt / iTXt 元数据），近几年的现代浏览器都支持。
+压缩的 PNG 元数据需要浏览器支持 `DecompressionStream`。
 
 ## 支持的输入
 
@@ -99,54 +90,19 @@ JPEG 的 EXIF 段有 64 KB 左右的上限。Image Saver 遇到超大工作流�
 
 PNG / JPEG / WebP。GIF、AVIF、HEIC 暂不支持。图片格式按文件签名识别，不只看扩展名。
 
-## 文件说明
+## 开发与构建
 
-```
-index.html            界面
-styles.css            样式
-core.js               解析、图片元数据、Diff 引擎（浏览器 + Node 通用）
-app.js                UI 交互和工作流图渲染
-start-comfy-diff.cmd  双击启动
-launch.ps1            用 Chrome/Edge 的 --app 模式打开
-tests/core.test.cjs    使用合成数据的核心回归测试
-```
-
-## 开发 / 验证
-
-需要 Node.js 22 或更新版本。公开测试不需要安装依赖：
+页面由 `index.html`、`styles.css`、`core.js` 和 `app.js` 组成。用 Node.js 22 或更新版本运行合成数据回归测试，无需安装 npm 包。
 
 ```sh
 node --test tests/core.test.cjs
 ```
 
-原有本地测试夹具与截图包含个人工作流内容，已通过 `.gitignore` 排除，不随仓库发布。下列大型工作流与浏览器测试覆盖指发布前的本地验证；公开回归测试使用代码内构造的合成数据。
+在 Windows 的 PowerShell 中运行以下脚本，使用系统自带的 .NET Framework C# 编译器生成 `outputs/ComfyWorkflowDiff.exe`。构建脚本只打包上述四个页面文件，启动器源码位于 `windows/Launcher.cs`。
 
-核心逻辑可在 Node 中直接加载：
-
-```js
-const core = require('./core.js')
-const a = await core.parseFileBuffer(bytes, 'a.png')
-const b = await core.parseFileBuffer(bytes, 'b.png')
-const diff = core.compareParsed(a, b, { compareLinks: false })
-console.log(diff.stats)
+```powershell
+.\windows\build.ps1
 ```
-
-当前测试覆盖：
-
-- 209 节点 / 51 组 / 437 连线的大型 UI 工作流；
-- 大整数种子（19 位）精确比较；
-- 节点参数、Bypass、节点增删；
-- 子图内部参数改动；
-- A→B 操作分类（复制 / Bypass / 新增 / 删除）；
-- 待办清单、节点全部 B 值复制；
-- PNG tEXt / zTXt / iTXt；
-- JPEG EXIF `workflow:` + `prompt:` + A1111 `UserComment`；
-- WebP EXIF；
-- API Prompt 自动布局；
-- A1111 摘要；
-- 完整工作流 ↔ A1111 混合比较；
-- 默认只看变更、连线关闭、缩放到变更范围；
-- Chrome 真实渲染、真实鼠标点击、固定尺寸操作标签、节点名定位、A/B 交换、错误提示和响应式布局。
 
 ## 已知边界
 
@@ -159,7 +115,7 @@ console.log(diff.stats)
 
 ## 隐私
 
-所有文件在浏览器内存中解析，不上传、不写入服务器。导出的 Markdown 由你自己保存。
+导入的文件在浏览器内存中解析。EXE 启动时会将内置页面放在 `%TEMP%\ComfyWorkflowDiff\`，以页面内容的 SHA-256 命名。若系统拒绝写入临时目录，则使用 EXE 旁的 `ComfyWorkflowDiff` 子目录。页面仅包含程序界面、样式和脚本，清理后可在下次启动时重新生成。导出的 Markdown 由你自行保存。
 
 报告和复制的待办清单包含所导入文件的名称、提示词及参数；对外分享前请自行检查这些内容。仓库不包含个人工作流、生成图片或原始测试截图。
 
